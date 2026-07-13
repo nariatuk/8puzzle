@@ -162,6 +162,20 @@
   }
   .status b { font-size: 1.2rem; color: #f0c060; }
 
+  .speed {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: .78rem;
+    letter-spacing: .1em;
+    opacity: .9;
+  }
+  .speed input[type="range"] {
+    width: 170px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
   .message {
     min-height: 1.6em;
     font-size: 1.05rem;
@@ -188,6 +202,15 @@
   </div>
   <div class="row">
     <button id="btnShuffle">シャッフル</button>
+    <button id="btnSolve" class="ghost">自動で解く</button>
+    <button id="btnInstant" class="ghost">一瞬で完成</button>
+    <button id="btnStop" class="ghost" hidden>停止</button>
+  </div>
+  <div class="speed">
+    <span>ゆっくり</span>
+    <input type="range" id="speed" min="0" max="100" value="55"
+           aria-label="自動解答の速度">
+    <span>はやい</span>
   </div>
   <div class="message" id="message"></div>
 </div>
@@ -265,6 +288,7 @@ function tryMove(tileNum) {
 }
 
 function onTileClick(n) {
+  if (solving) return;          // 自動解答中は手動操作を受け付けない
   if (!tryMove(n)) return;
   moveCount++;
   render();
@@ -303,7 +327,183 @@ function shuffle(times = 200) {
   render();
 }
 
-btnShuffle.addEventListener("click", () => shuffle());
+btnShuffle.addEventListener("click", () => {
+  stopAutoPlay();
+  shuffle();
+});
+
+/* =====================================================
+   A* 探索ソルバー
+   ヒューリスティック: マンハッタン距離
+   戻り値: 動かすプレート番号の配列（最短手順）
+===================================================== */
+function manhattan(b) {
+  let d = 0;
+  for (let i = 0; i < 9; i++) {
+    const v = b[i];
+    if (v === 0) continue;
+    const gi = v - 1; // 完成形での位置
+    d += Math.abs(i % 3 - gi % 3) + Math.abs(Math.floor(i / 3) - Math.floor(gi / 3));
+  }
+  return d;
+}
+
+/* 最小ヒープ（優先度付きキュー） */
+class MinHeap {
+  constructor() { this.a = []; }
+  push(item) {
+    const a = this.a;
+    a.push(item);
+    let i = a.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (a[p].f <= a[i].f) break;
+      [a[p], a[i]] = [a[i], a[p]];
+      i = p;
+    }
+  }
+  pop() {
+    const a = this.a;
+    const top = a[0], last = a.pop();
+    if (a.length) {
+      a[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1, r = l + 1;
+        let m = i;
+        if (l < a.length && a[l].f < a[m].f) m = l;
+        if (r < a.length && a[r].f < a[m].f) m = r;
+        if (m === i) break;
+        [a[m], a[i]] = [a[i], a[m]];
+        i = m;
+      }
+    }
+    return top;
+  }
+  get size() { return this.a.length; }
+}
+
+function solve(start) {
+  const startKey = start.join("");
+  const goalKey = GOAL.join("");
+  if (startKey === goalKey) return [];
+
+  const open = new MinHeap();
+  const gScore = new Map();     // 状態キー → g値
+  const cameFrom = new Map();   // 状態キー → [親キー, 動かしたプレート番号]
+
+  gScore.set(startKey, 0);
+  open.push({ f: manhattan(start), g: 0, key: startKey });
+
+  while (open.size) {
+    const cur = open.pop();
+    if (cur.key === goalKey) {
+      const moves = [];
+      let k = cur.key;
+      while (k !== startKey) {
+        const [pk, tile] = cameFrom.get(k);
+        moves.push(tile);
+        k = pk;
+      }
+      return moves.reverse();
+    }
+    if (cur.g > gScore.get(cur.key)) continue; // 古いエントリはスキップ
+
+    const b = cur.key.split("").map(Number);
+    const empty = b.indexOf(0);
+    for (const ni of neighbors(empty)) {
+      const nb = b.slice();
+      nb[empty] = nb[ni];
+      nb[ni] = 0;
+      const nk = nb.join("");
+      const ng = cur.g + 1;
+      if (ng < (gScore.get(nk) ?? Infinity)) {
+        gScore.set(nk, ng);
+        cameFrom.set(nk, [cur.key, b[ni]]);
+        open.push({ f: ng + manhattan(nb), g: ng, key: nk });
+      }
+    }
+  }
+  return null; // 到達不能（正規シャッフルでは発生しない）
+}
+
+/* =====================================================
+   自動解答の再生
+===================================================== */
+const btnSolve   = document.getElementById("btnSolve");
+const btnInstant = document.getElementById("btnInstant");
+const btnStop    = document.getElementById("btnStop");
+const speedEl    = document.getElementById("speed");
+
+let solving = false;
+let playTimer = null;
+
+/* スライダー値(0〜100) → 1手あたりの間隔(ミリ秒) */
+function stepInterval() {
+  const v = Number(speedEl.value);
+  return Math.round(700 - v * 6.3);   // 700ms（ゆっくり）〜 70ms（はやい）
+}
+
+function setSolvingUI(on) {
+  solving = on;
+  btnSolve.disabled   = on;
+  btnInstant.disabled = on;
+  btnShuffle.disabled = on;
+  btnStop.hidden      = !on;
+}
+
+function stopAutoPlay() {
+  if (playTimer !== null) {
+    clearTimeout(playTimer);
+    playTimer = null;
+  }
+  setSolvingUI(false);
+}
+
+function autoSolve() {
+  if (isSolved()) {
+    messageEl.textContent = "すでに完成しています";
+    return;
+  }
+  const moves = solve(board);
+  if (!moves) return;
+  messageEl.textContent = `最短 ${moves.length} 手で解答中…`;
+  setSolvingUI(true);
+
+  let i = 0;
+  const step = () => {
+    if (i >= moves.length) {
+      stopAutoPlay();
+      messageEl.textContent = `完成！（自動解答 ${moves.length} 手）`;
+      shuffled = false;
+      return;
+    }
+    tryMove(moves[i]);
+    i++;
+    render();
+    playTimer = setTimeout(step, stepInterval()); // 再生中の速度変更も反映
+  };
+  step();
+}
+
+function instantSolve() {
+  stopAutoPlay();
+  if (isSolved()) {
+    messageEl.textContent = "すでに完成しています";
+    return;
+  }
+  board = GOAL.slice();
+  shuffled = false;
+  render();
+  messageEl.textContent = "完成形にそろえました";
+}
+
+btnSolve.addEventListener("click", autoSolve);
+btnInstant.addEventListener("click", instantSolve);
+btnStop.addEventListener("click", () => {
+  stopAutoPlay();
+  messageEl.textContent = "自動解答を停止しました";
+});
 
 /* ---- 初期表示 ---- */
 render();
