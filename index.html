@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>8パズル — スライドパズル</title>
+<style>
+  :root {
+    --bg: #22364a;          /* 藍色のフェルト台 */
+    --bg-deep: #1a2a3a;
+    --frame: #4a3226;       /* 木枠（濃い木目） */
+    --frame-hi: #6b4a35;
+    --tile-hi: #efd09a;     /* プレート表面（明） */
+    --tile-lo: #d9a85f;     /* プレート表面（暗） */
+    --tile-edge: #8a5f33;
+    --ink: #3a2a1a;         /* 数字の墨色 */
+    --paper: #f3e9d6;       /* 生成り（文字色） */
+    --accent: #c7432e;      /* 朱色（ボタン） */
+    --accent-dark: #9e3221;
+    --tile-size: min(24vw, 108px);
+    --gap: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    padding: 24px 16px;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(255,255,255,.06), transparent 60%),
+      var(--bg);
+    color: var(--paper);
+    font-family: "Hiragino Maru Gothic ProN", "Hiragino Kaku Gothic ProN",
+                 "Yu Gothic Medium", "Yu Gothic", "Meiryo", sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  header { text-align: center; }
+  h1 {
+    font-size: 1.7rem;
+    letter-spacing: .35em;
+    text-indent: .35em;
+    font-weight: 700;
+  }
+  .subtitle {
+    margin-top: 6px;
+    font-size: .8rem;
+    letter-spacing: .18em;
+    opacity: .65;
+  }
+
+  /* ---- 盤面 ---- */
+  .frame {
+    padding: 14px;
+    border-radius: 14px;
+    background:
+      repeating-linear-gradient(94deg,
+        rgba(255,255,255,.04) 0 3px, transparent 3px 9px),
+      linear-gradient(160deg, var(--frame-hi), var(--frame));
+    box-shadow:
+      inset 0 2px 2px rgba(255,255,255,.18),
+      inset 0 -3px 4px rgba(0,0,0,.35),
+      0 10px 26px rgba(0,0,0,.45);
+  }
+  .board {
+    position: relative;
+    width: calc(var(--tile-size) * 3 + var(--gap) * 2);
+    height: calc(var(--tile-size) * 3 + var(--gap) * 2);
+    border-radius: 8px;
+    background: var(--bg-deep);
+    box-shadow: inset 0 3px 8px rgba(0,0,0,.6);
+    touch-action: manipulation;
+  }
+
+  .tile {
+    position: absolute;
+    top: 0; left: 0;
+    width: var(--tile-size);
+    height: var(--tile-size);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: calc(var(--tile-size) * .46);
+    font-weight: 700;
+    color: var(--ink);
+    border-radius: 10px;
+    background:
+      repeating-linear-gradient(97deg,
+        rgba(120,70,20,.07) 0 2px, transparent 2px 7px),
+      linear-gradient(155deg, var(--tile-hi), var(--tile-lo));
+    border: 1px solid var(--tile-edge);
+    box-shadow:
+      inset 0 2px 2px rgba(255,255,255,.55),
+      inset 0 -3px 3px rgba(120,70,20,.35),
+      0 3px 5px rgba(0,0,0,.45);
+    cursor: pointer;
+    transition: transform .16s ease-out;
+    will-change: transform;
+  }
+  .tile:active { filter: brightness(.96); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tile { transition: none; }
+  }
+
+  /* ---- 操作パネル ---- */
+  .panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: min(92vw, 400px);
+  }
+  .row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  button {
+    font: inherit;
+    font-weight: 700;
+    letter-spacing: .08em;
+    padding: 10px 18px;
+    border-radius: 999px;
+    border: none;
+    color: var(--paper);
+    background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+    box-shadow: 0 3px 0 #6d2216, 0 5px 10px rgba(0,0,0,.35);
+    cursor: pointer;
+    transition: transform .06s, box-shadow .06s, opacity .2s;
+  }
+  button:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 #6d2216, 0 3px 6px rgba(0,0,0,.3);
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  button.ghost {
+    background: linear-gradient(180deg, #3d5570, #2c3f54);
+    box-shadow: 0 3px 0 #16222f, 0 5px 10px rgba(0,0,0,.3);
+  }
+  button.ghost:active {
+    box-shadow: 0 1px 0 #16222f, 0 3px 6px rgba(0,0,0,.25);
+  }
+  button:focus-visible {
+    outline: 3px solid #f0c060;
+    outline-offset: 2px;
+  }
+
+  .status {
+    display: flex;
+    gap: 24px;
+    font-size: .95rem;
+    letter-spacing: .1em;
+  }
+  .status b { font-size: 1.2rem; color: #f0c060; }
+
+  .message {
+    min-height: 1.6em;
+    font-size: 1.05rem;
+    letter-spacing: .2em;
+    color: #f0c060;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>8パズル</h1>
+  <div class="subtitle">プレートをスライドして 1〜8 を並べよう</div>
+</header>
+
+<div class="frame">
+  <div class="board" id="board" aria-label="パズル盤面"></div>
+</div>
+
+<div class="panel">
+  <div class="status">
+    <span>手数 <b id="moveCount">0</b></span>
+  </div>
+  <div class="row">
+    <button id="btnShuffle">シャッフル</button>
+  </div>
+  <div class="message" id="message"></div>
+</div>
+
+<script>
+"use strict";
+
+/* =====================================================
+   盤面の状態
+   board[i] = マス i にあるプレート番号（0 は空きマス）
+   マス番号:  0 1 2
+              3 4 5
+              6 7 8
+   完成形: [1,2,3,4,5,6,7,8,0]
+===================================================== */
+const GOAL = [1, 2, 3, 4, 5, 6, 7, 8, 0];
+let board = GOAL.slice();
+let moveCount = 0;
+let shuffled = false;   // シャッフル済みか（完成判定に使用）
+
+const boardEl   = document.getElementById("board");
+const moveEl    = document.getElementById("moveCount");
+const messageEl = document.getElementById("message");
+const btnShuffle = document.getElementById("btnShuffle");
+
+/* ---- プレート要素の生成 ---- */
+const tileEls = {};   // プレート番号 → DOM要素
+for (let n = 1; n <= 8; n++) {
+  const el = document.createElement("div");
+  el.className = "tile";
+  el.textContent = n;
+  el.dataset.num = n;
+  el.addEventListener("click", () => onTileClick(n));
+  boardEl.appendChild(el);
+  tileEls[n] = el;
+}
+
+/* ---- 座標計算 ---- */
+function cellXY(index) {
+  const col = index % 3;
+  const row = Math.floor(index / 3);
+  return { col, row };
+}
+
+function render() {
+  for (let i = 0; i < 9; i++) {
+    const n = board[i];
+    if (n === 0) continue;
+    const { col, row } = cellXY(i);
+    tileEls[n].style.transform =
+      `translate(calc(${col} * (var(--tile-size) + var(--gap))),` +
+      ` calc(${row} * (var(--tile-size) + var(--gap))))`;
+  }
+  moveEl.textContent = moveCount;
+}
+
+/* ---- 移動処理 ---- */
+function neighbors(index) {
+  const { col, row } = cellXY(index);
+  const list = [];
+  if (row > 0) list.push(index - 3);
+  if (row < 2) list.push(index + 3);
+  if (col > 0) list.push(index - 1);
+  if (col < 2) list.push(index + 1);
+  return list;
+}
+
+function tryMove(tileNum) {
+  const from  = board.indexOf(tileNum);
+  const empty = board.indexOf(0);
+  if (!neighbors(empty).includes(from)) return false;
+  board[empty] = tileNum;
+  board[from]  = 0;
+  return true;
+}
+
+function onTileClick(n) {
+  if (!tryMove(n)) return;
+  moveCount++;
+  render();
+  checkSolved();
+}
+
+function isSolved() {
+  return board.every((v, i) => v === GOAL[i]);
+}
+
+function checkSolved() {
+  if (shuffled && isSolved()) {
+    messageEl.textContent = `完成！ ${moveCount} 手でそろいました`;
+    shuffled = false;
+  }
+}
+
+/* ---- シャッフル ----
+   完成形からランダムな正規手を多数適用する方式。
+   これにより「必ず解ける配置」だけが生成される。
+   直前の手をすぐ打ち消す動きは避ける。            */
+function shuffle(times = 200) {
+  board = GOAL.slice();
+  let prevEmpty = -1;
+  for (let k = 0; k < times; k++) {
+    const empty = board.indexOf(0);
+    const cands = neighbors(empty).filter(i => i !== prevEmpty);
+    const pick  = cands[Math.floor(Math.random() * cands.length)];
+    board[empty] = board[pick];
+    board[pick]  = 0;
+    prevEmpty = empty;
+  }
+  moveCount = 0;
+  shuffled = true;
+  messageEl.textContent = "";
+  render();
+}
+
+btnShuffle.addEventListener("click", () => shuffle());
+
+/* ---- 初期表示 ---- */
+render();
+</script>
+</body>
+</html>
