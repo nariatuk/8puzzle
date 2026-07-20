@@ -205,6 +205,7 @@
 
 <div class="panel">
   <div class="status">
+    <span>最短 <b id="optimalCount">－</b></span>
     <span>手数 <b id="moveCount">0</b></span>
   </div>
   <div class="row">
@@ -242,6 +243,7 @@ let shuffled = false;   // シャッフル済みか（完成判定に使用）
 
 const boardEl   = document.getElementById("board");
 const moveEl    = document.getElementById("moveCount");
+const optimalEl = document.getElementById("optimalCount");
 const messageEl = document.getElementById("message");
 const btnShuffle = document.getElementById("btnShuffle");
 const btnUndo    = document.getElementById("btnUndo");
@@ -349,6 +351,8 @@ function shuffle(times = 200) {
   history = [];
   shuffled = true;
   messageEl.textContent = "";
+  /* この配置の最短手数をA*ソルバーで計算して表示 */
+  optimalEl.textContent = solve(board).length;
   render();
 }
 
