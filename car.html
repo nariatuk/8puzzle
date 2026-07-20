@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>カーパズル — スライドパズル（カー版）</title>
+<style>
+  :root {
+    --bg: #26282b;          /* アスファルトの台 */
+    --bg-deep: #17181a;
+    --frame: #3a3d42;       /* ガレージの鋼材枠 */
+    --frame-hi: #565a60;
+    --tile-hi: #ffffff;     /* プレート表面（明・ホワイト） */
+    --tile-lo: #d8dadd;     /* プレート表面（暗） */
+    --tile-edge: #b6b9be;
+    --ink: #d6362b;         /* 数字（レーシングレッド） */
+    --paper: #eceff2;       /* 文字色（明） */
+    --accent: #d6362b;      /* レーシングレッド（ボタン） */
+    --accent-dark: #a3221a;
+    --tile-size: min(24vw, 108px);
+    --gap: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    padding: 24px 16px;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(255,255,255,.06), transparent 60%),
+      var(--bg);
+    color: var(--paper);
+    font-family: "Hiragino Maru Gothic ProN", "Hiragino Kaku Gothic ProN",
+                 "Yu Gothic Medium", "Yu Gothic", "Meiryo", sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  header { text-align: center; }
+  h1 {
+    font-size: 1.7rem;
+    letter-spacing: .35em;
+    text-indent: .35em;
+    font-weight: 700;
+  }
+  .subtitle {
+    margin-top: 6px;
+    font-size: .8rem;
+    letter-spacing: .18em;
+    opacity: .65;
+  }
+
+  /* ---- 盤面 ---- */
+  .frame {
+    padding: 14px;
+    border-radius: 14px;
+    background:
+      repeating-linear-gradient(94deg,
+        rgba(255,255,255,.04) 0 3px, transparent 3px 9px),
+      linear-gradient(160deg, var(--frame-hi), var(--frame));
+    box-shadow:
+      inset 0 2px 2px rgba(255,255,255,.18),
+      inset 0 -3px 4px rgba(0,0,0,.35),
+      0 10px 26px rgba(0,0,0,.45);
+  }
+  .board {
+    position: relative;
+    width: calc(var(--tile-size) * 3 + var(--gap) * 2);
+    height: calc(var(--tile-size) * 3 + var(--gap) * 2);
+    border-radius: 8px;
+    background: var(--bg-deep);
+    box-shadow: inset 0 3px 8px rgba(0,0,0,.6);
+    touch-action: manipulation;
+  }
+
+  .tile {
+    position: absolute;
+    top: 0; left: 0;
+    width: var(--tile-size);
+    height: var(--tile-size);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: calc(var(--tile-size) * .46);
+    font-weight: 700;
+    color: var(--ink);
+    border-radius: 10px;
+    background:
+      linear-gradient(155deg, var(--tile-hi) 0%, #f2f4f6 55%, var(--tile-lo) 100%);
+    border: 1px solid var(--tile-edge);
+    box-shadow:
+      inset 0 2px 2px rgba(255,255,255,.9),
+      inset 0 -3px 3px rgba(60,70,80,.28),
+      0 3px 5px rgba(0,0,0,.5);
+    cursor: pointer;
+    transition: transform .16s ease-out;
+    will-change: transform;
+  }
+  .tile:active { filter: brightness(.96); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tile { transition: none; }
+  }
+
+  /* ---- 完成演出（フェードイン） ---- */
+  .reveal {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: rgba(13,14,16,.93);
+    border-radius: 8px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 1.4s ease;
+    cursor: pointer;
+  }
+  .reveal.show { opacity: 1; pointer-events: auto; }
+  .reveal svg {
+    width: 88%;
+    height: auto;
+    transform: scale(.94) translateX(-8px);
+    transition: transform 1.6s cubic-bezier(.2,.7,.3,1);
+  }
+  .reveal.show svg { transform: scale(1) translateX(0); }
+  .rev-title {
+    font-size: 1.05rem;
+    letter-spacing: .34em;
+    text-indent: .34em;
+    color: #ff9c8f;
+    font-weight: 700;
+  }
+  .rev-hint {
+    font-size: .62rem;
+    letter-spacing: .18em;
+    opacity: .55;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal, .reveal svg { transition: none; }
+  }
+
+  /* ---- 操作パネル ---- */
+  .panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: min(92vw, 400px);
+  }
+  .row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  button {
+    font: inherit;
+    font-weight: 700;
+    letter-spacing: .08em;
+    padding: 10px 18px;
+    border-radius: 999px;
+    border: none;
+    color: var(--paper);
+    background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+    box-shadow: 0 3px 0 #6d2216, 0 5px 10px rgba(0,0,0,.35);
+    cursor: pointer;
+    transition: transform .06s, box-shadow .06s, opacity .2s;
+  }
+  button:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 #6d2216, 0 3px 6px rgba(0,0,0,.3);
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  button.ghost {
+    background: linear-gradient(180deg, #3d5570, #2c3f54);
+    box-shadow: 0 3px 0 #16222f, 0 5px 10px rgba(0,0,0,.3);
+  }
+  button.ghost:active {
+    box-shadow: 0 1px 0 #16222f, 0 3px 6px rgba(0,0,0,.25);
+  }
+  button:focus-visible {
+    outline: 3px solid #f5a0a0;
+    outline-offset: 2px;
+  }
+
+  .status {
+    display: flex;
+    gap: 24px;
+    font-size: .95rem;
+    letter-spacing: .1em;
+  }
+  .status b { font-size: 1.2rem; color: #ff9c8f; }
+
+  .speed {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: .78rem;
+    letter-spacing: .1em;
+    opacity: .9;
+  }
+  .speed input[type="range"] {
+    width: 170px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .switch {
+    font-size: .8rem;
+    letter-spacing: .12em;
+  }
+  .switch a { color: inherit; opacity: .65; }
+  .switch a:hover { opacity: 1; }
+
+  .message {
+    min-height: 1.6em;
+    font-size: 1.05rem;
+    letter-spacing: .2em;
+    color: #ff9c8f;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>カーパズル</h1>
+  <div class="subtitle">そろえると 真っ赤なロードスターが現れる</div>
+</header>
+
+<div class="frame">
+  <div class="board" id="board" aria-label="パズル盤面">
+    <div class="reveal" id="reveal" title="タップで閉じる">
+      <div class="rev-title">COMPLETE!</div>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 200">
+        <defs>
+          <linearGradient id="bodyG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#f0564a"/>
+            <stop offset="0.55" stop-color="#d6362b"/>
+            <stop offset="1" stop-color="#a3221a"/>
+          </linearGradient>
+          <linearGradient id="glassG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#cfe6f5"/>
+            <stop offset="1" stop-color="#7fa8c4"/>
+          </linearGradient>
+        </defs>
+      
+        <!-- 地面の影 -->
+        <ellipse cx="190" cy="168" rx="165" ry="11" fill="rgba(0,0,0,.4)"/>
+      
+        <!-- ロールバー（ボディの奥） -->
+        <path d="M 196 78 L 199 46 Q 200 40 207 40 L 216 40 Q 222 40 222 46 L 224 78 Z"
+              fill="#2a2c2f"/>
+      
+        <!-- ボディ本体 -->
+        <path d="M 24 138
+                 Q 16 116 38 106
+                 L 58 101
+                 Q 82 78 128 74
+                 L 196 72
+                 Q 250 72 272 86
+                 L 322 94
+                 Q 352 99 354 116
+                 Q 356 132 342 138
+                 Z"
+              fill="url(#bodyG)"/>
+      
+        <!-- フロントウインドシールド -->
+        <path d="M 148 73 L 168 42 L 184 42 L 178 72 Z" fill="url(#glassG)"
+              stroke="#2a2c2f" stroke-width="3"/>
+      
+        <!-- サイドインテーク（リアホイール前の吸気口） -->
+        <path d="M 236 96 L 266 90 L 264 122 L 240 122 Z" fill="#1d1f21"/>
+      
+        <!-- ドアの分割線とキャラクターライン -->
+        <path d="M 168 76 L 162 130" stroke="#a3221a" stroke-width="2.5" fill="none"/>
+        <path d="M 60 104 Q 150 92 236 96" stroke="#b52a20" stroke-width="2.5" fill="none"/>
+      
+        <!-- サイドシル（下部の黒） -->
+        <rect x="118" y="128" width="120" height="10" rx="4" fill="#2a2c2f"/>
+      
+        <!-- ヘッドライト（吊り目） -->
+        <path d="M 36 106 L 66 99 L 62 109 L 40 112 Z" fill="#f5f0d8" stroke="#c9c2a0" stroke-width="1.5"/>
+      
+        <!-- テールランプ -->
+        <rect x="342" y="102" width="10" height="14" rx="3" fill="#ff8a4d"/>
+      
+        <!-- フロントホイール -->
+        <circle cx="96" cy="138" r="31" fill="#141517"/>
+        <circle cx="96" cy="138" r="26" fill="#26282b"/>
+        <circle cx="96" cy="138" r="16" fill="#8c9096"/>
+        <g stroke="#26282b" stroke-width="4">
+          <line x1="96" y1="124" x2="96" y2="152"/>
+          <line x1="82" y1="138" x2="110" y2="138"/>
+          <line x1="86" y1="128" x2="106" y2="148"/>
+          <line x1="106" y1="128" x2="86" y2="148"/>
+        </g>
+        <circle cx="96" cy="138" r="5" fill="#d9dce0"/>
+      
+        <!-- リアホイール -->
+        <circle cx="288" cy="138" r="31" fill="#141517"/>
+        <circle cx="288" cy="138" r="26" fill="#26282b"/>
+        <circle cx="288" cy="138" r="16" fill="#8c9096"/>
+        <g stroke="#26282b" stroke-width="4">
+          <line x1="288" y1="124" x2="288" y2="152"/>
+          <line x1="274" y1="138" x2="302" y2="138"/>
+          <line x1="278" y1="128" x2="298" y2="148"/>
+          <line x1="298" y1="128" x2="278" y2="148"/>
+        </g>
+        <circle cx="288" cy="138" r="5" fill="#d9dce0"/>
+      
+        <!-- ドアミラー -->
+        <path d="M 150 70 L 141 62 Q 137 58 141 55 Q 146 53 149 58 L 155 68 Z" fill="#d6362b"/>
+      
+        <!-- ボディのハイライト -->
+        <path d="M 70 92 Q 120 80 180 79" stroke="rgba(255,255,255,.45)" stroke-width="4"
+              stroke-linecap="round" fill="none"/>
+      </svg>
+      <div class="rev-hint">タップで閉じる</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="status">
+    <span>最短 <b id="optimalCount">－</b></span>
+    <span>手数 <b id="moveCount">0</b></span>
+  </div>
+  <div class="row">
+    <button id="btnShuffle">シャッフル</button>
+    <button id="btnUndo" class="ghost">1手戻す</button>
+    <button id="btnSolve" class="ghost">自動で解く</button>
+    <button id="btnInstant" class="ghost">一瞬で完成</button>
+    <button id="btnStop" class="ghost" hidden>停止</button>
+  </div>
+  <div class="speed">
+    <span>ゆっくり</span>
+    <input type="range" id="speed" min="0" max="100" value="55"
+           aria-label="自動解答の速度">
+    <span>はやい</span>
+  </div>
+  <div class="message" id="message"></div>
+  <div class="switch"><a href="abc.html">ABC版（メタル調）はこちら →</a></div>
+</div>
+
+<script>
+"use strict";
+
+/* =====================================================
+   盤面の状態
+   board[i] = マス i にあるプレート番号（0 は空きマス）
+   マス番号:  0 1 2
+              3 4 5
+              6 7 8
+   完成形: [1,2,3,4,5,6,7,8,0]
+===================================================== */
+const GOAL = [1, 2, 3, 4, 5, 6, 7, 8, 0];
+let board = GOAL.slice();
+let moveCount = 0;
+let shuffled = false;   // シャッフル済みか（完成判定に使用）
+
+const boardEl   = document.getElementById("board");
+const moveEl    = document.getElementById("moveCount");
+const optimalEl = document.getElementById("optimalCount");
+const messageEl = document.getElementById("message");
+const btnShuffle = document.getElementById("btnShuffle");
+const btnUndo    = document.getElementById("btnUndo");
+const revealEl   = document.getElementById("reveal");
+
+/* ---- 完成演出（車のイラストをフェードイン） ---- */
+function showReveal() { revealEl.classList.add("show"); }
+function hideReveal() { revealEl.classList.remove("show"); }
+revealEl.addEventListener("click", hideReveal);
+
+/* ---- プレート要素の生成 ---- */
+const tileEls = {};   // プレート番号 → DOM要素
+for (let n = 1; n <= 8; n++) {
+  const el = document.createElement("div");
+  el.className = "tile";
+  el.textContent = n;
+  el.dataset.num = n;
+  el.addEventListener("click", () => onTileClick(n));
+  boardEl.appendChild(el);
+  tileEls[n] = el;
+}
+
+/* ---- 座標計算 ---- */
+function cellXY(index) {
+  const col = index % 3;
+  const row = Math.floor(index / 3);
+  return { col, row };
+}
+
+function render() {
+  for (let i = 0; i < 9; i++) {
+    const n = board[i];
+    if (n === 0) continue;
+    const { col, row } = cellXY(i);
+    tileEls[n].style.transform =
+      `translate(calc(${col} * (var(--tile-size) + var(--gap))),` +
+      ` calc(${row} * (var(--tile-size) + var(--gap))))`;
+  }
+  moveEl.textContent = moveCount;
+  btnUndo.disabled = solving || history.length === 0;
+}
+
+/* ---- 移動処理 ---- */
+function neighbors(index) {
+  const { col, row } = cellXY(index);
+  const list = [];
+  if (row > 0) list.push(index - 3);
+  if (row < 2) list.push(index + 3);
+  if (col > 0) list.push(index - 1);
+  if (col < 2) list.push(index + 1);
+  return list;
+}
+
+function tryMove(tileNum) {
+  const from  = board.indexOf(tileNum);
+  const empty = board.indexOf(0);
+  if (!neighbors(empty).includes(from)) return false;
+  board[empty] = tileNum;
+  board[from]  = 0;
+  return true;
+}
+
+let history = [];   // 手動で動かしたプレート番号の履歴（アンドゥ用）
+
+function onTileClick(n) {
+  if (solving) return;          // 自動解答中は手動操作を受け付けない
+  if (!tryMove(n)) return;
+  history.push(n);
+  moveCount++;
+  render();
+  checkSolved();
+}
+
+/* アンドゥ: 直前に動かしたプレートをもう一度動かすと元の位置に戻る */
+function undo() {
+  if (solving || history.length === 0) return;
+  const n = history.pop();
+  tryMove(n);
+  moveCount = Math.max(0, moveCount - 1);
+  messageEl.textContent = "";
+  render();
+}
+
+function isSolved() {
+  return board.every((v, i) => v === GOAL[i]);
+}
+
+function checkSolved() {
+  if (shuffled && isSolved()) {
+    messageEl.textContent = `完成！ ${moveCount} 手でそろいました`;
+    shuffled = false;
+    showReveal();
+  }
+}
+
+/* ---- シャッフル ----
+   完成形からランダムな正規手を多数適用する方式。
+   これにより「必ず解ける配置」だけが生成される。
+   直前の手をすぐ打ち消す動きは避ける。            */
+function shuffle(times = 200) {
+  board = GOAL.slice();
+  let prevEmpty = -1;
+  for (let k = 0; k < times; k++) {
+    const empty = board.indexOf(0);
+    const cands = neighbors(empty).filter(i => i !== prevEmpty);
+    const pick  = cands[Math.floor(Math.random() * cands.length)];
+    board[empty] = board[pick];
+    board[pick]  = 0;
+    prevEmpty = empty;
+  }
+  moveCount = 0;
+  history = [];
+  shuffled = true;
+  messageEl.textContent = "";
+  hideReveal();
+  /* この配置の最短手数をA*ソルバーで計算して表示 */
+  optimalEl.textContent = solve(board).length;
+  render();
+}
+
+btnShuffle.addEventListener("click", () => {
+  stopAutoPlay();
+  shuffle();
+});
+
+/* =====================================================
+   A* 探索ソルバー
+   ヒューリスティック: マンハッタン距離
+   戻り値: 動かすプレート番号の配列（最短手順）
+===================================================== */
+function manhattan(b) {
+  let d = 0;
+  for (let i = 0; i < 9; i++) {
+    const v = b[i];
+    if (v === 0) continue;
+    const gi = v - 1; // 完成形での位置
+    d += Math.abs(i % 3 - gi % 3) + Math.abs(Math.floor(i / 3) - Math.floor(gi / 3));
+  }
+  return d;
+}
+
+/* 最小ヒープ（優先度付きキュー） */
+class MinHeap {
+  constructor() { this.a = []; }
+  push(item) {
+    const a = this.a;
+    a.push(item);
+    let i = a.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (a[p].f <= a[i].f) break;
+      [a[p], a[i]] = [a[i], a[p]];
+      i = p;
+    }
+  }
+  pop() {
+    const a = this.a;
+    const top = a[0], last = a.pop();
+    if (a.length) {
+      a[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1, r = l + 1;
+        let m = i;
+        if (l < a.length && a[l].f < a[m].f) m = l;
+        if (r < a.length && a[r].f < a[m].f) m = r;
+        if (m === i) break;
+        [a[m], a[i]] = [a[i], a[m]];
+        i = m;
+      }
+    }
+    return top;
+  }
+  get size() { return this.a.length; }
+}
+
+function solve(start) {
+  const startKey = start.join("");
+  const goalKey = GOAL.join("");
+  if (startKey === goalKey) return [];
+
+  const open = new MinHeap();
+  const gScore = new Map();     // 状態キー → g値
+  const cameFrom = new Map();   // 状態キー → [親キー, 動かしたプレート番号]
+
+  gScore.set(startKey, 0);
+  open.push({ f: manhattan(start), g: 0, key: startKey });
+
+  while (open.size) {
+    const cur = open.pop();
+    if (cur.key === goalKey) {
+      const moves = [];
+      let k = cur.key;
+      while (k !== startKey) {
+        const [pk, tile] = cameFrom.get(k);
+        moves.push(tile);
+        k = pk;
+      }
+      return moves.reverse();
+    }
+    if (cur.g > gScore.get(cur.key)) continue; // 古いエントリはスキップ
+
+    const b = cur.key.split("").map(Number);
+    const empty = b.indexOf(0);
+    for (const ni of neighbors(empty)) {
+      const nb = b.slice();
+      nb[empty] = nb[ni];
+      nb[ni] = 0;
+      const nk = nb.join("");
+      const ng = cur.g + 1;
+      if (ng < (gScore.get(nk) ?? Infinity)) {
+        gScore.set(nk, ng);
+        cameFrom.set(nk, [cur.key, b[ni]]);
+        open.push({ f: ng + manhattan(nb), g: ng, key: nk });
+      }
+    }
+  }
+  return null; // 到達不能（正規シャッフルでは発生しない）
+}
+
+/* =====================================================
+   自動解答の再生
+===================================================== */
+const btnSolve   = document.getElementById("btnSolve");
+const btnInstant = document.getElementById("btnInstant");
+const btnStop    = document.getElementById("btnStop");
+const speedEl    = document.getElementById("speed");
+
+let solving = false;
+let playTimer = null;
+
+/* スライダー値(0〜100) → 1手あたりの間隔(ミリ秒) */
+function stepInterval() {
+  const v = Number(speedEl.value);
+  return Math.round(700 - v * 6.3);   // 700ms（ゆっくり）〜 70ms（はやい）
+}
+
+function setSolvingUI(on) {
+  solving = on;
+  btnSolve.disabled   = on;
+  btnInstant.disabled = on;
+  btnShuffle.disabled = on;
+  btnUndo.disabled    = on || history.length === 0;
+  btnStop.hidden      = !on;
+}
+
+function stopAutoPlay() {
+  if (playTimer !== null) {
+    clearTimeout(playTimer);
+    playTimer = null;
+  }
+  setSolvingUI(false);
+}
+
+function autoSolve() {
+  if (isSolved()) {
+    messageEl.textContent = "すでに完成しています";
+    return;
+  }
+  const moves = solve(board);
+  if (!moves) return;
+  history = [];   // 自動解答後はアンドゥ対象なし
+  messageEl.textContent = `最短 ${moves.length} 手で解答中…`;
+  setSolvingUI(true);
+  render();
+
+  let i = 0;
+  const step = () => {
+    if (i >= moves.length) {
+      stopAutoPlay();
+      messageEl.textContent = `完成！（自動解答 ${moves.length} 手）`;
+      shuffled = false;
+      showReveal();
+      return;
+    }
+    tryMove(moves[i]);
+    i++;
+    render();
+    playTimer = setTimeout(step, stepInterval()); // 再生中の速度変更も反映
+  };
+  step();
+}
+
+function instantSolve() {
+  stopAutoPlay();
+  if (isSolved()) {
+    messageEl.textContent = "すでに完成しています";
+    return;
+  }
+  board = GOAL.slice();
+  shuffled = false;
+  history = [];
+  render();
+  messageEl.textContent = "完成形にそろえました";
+  showReveal();
+}
+
+btnUndo.addEventListener("click", undo);
+btnSolve.addEventListener("click", autoSolve);
+btnInstant.addEventListener("click", instantSolve);
+btnStop.addEventListener("click", () => {
+  stopAutoPlay();
+  messageEl.textContent = "自動解答を停止しました";
+});
+
+/* ---- 初期表示 ---- */
+render();
+</script>
+</body>
+</html>
